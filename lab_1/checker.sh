@@ -28,9 +28,11 @@ if [[ $N -lt 0 ]]; then
 fi
 
 diskUsage=$(df "$logDisk" | awk 'NR==2 {gsub("%",""); print $5}')
+diskName=$(df "$logDisk" | awk 'NR==2 {gsub("%",""); print $1}')
 filesCount=$(find $logDisk -type f | wc -l)
 
-echo "[INFO]: diskUsage = ${diskUsage}, filesCount = ${filesCount}, X = ${X}, N = ${N}"
+echo "[INFO]: Disk: ${diskName}"
+echo "[INFO]: Disk space used: ${diskUsage}%"
 
 if [[ $diskUsage -lt $X ]]; then
     echo "Compression is not demanded. Complete!"
@@ -47,16 +49,21 @@ elif [[ $filesCount -ge $N ]]; then
 
     echo -n "Files are compressing..."
 
-    tar -czf "${backupDisk}/${archiveName}" -C "${logDisk}" "${files[@]}"
+    compressionStatus=$(tar -czf "${backupDisk}/${archiveName}" -C "${logDisk}" "${files[@]}")
+    if $compressionStatus; then
+        echo -n "Old files are deleting..."
 
-    echo -n "Old files are deleting..."
+        for file in "${files[@]}"; do
+            rm -f "${logDisk}/${file}"
+        done
 
-    for file in "${files[@]}"; do
-        rm -f "${logDisk}/${file}"
-    done
-
-    echo -e "\rFiles were deleted and compressed in ${backupDisk}/${archiveName}. Complete!"
-    
+        echo -e "\rFiles were deleted and compressed in ${backupDisk}/${archiveName}. Complete!" 
+        diskUsage=$(df "$logDisk" | awk 'NR==2 {gsub("%",""); print $5}')
+        echo "[INFO]: Disk: ${diskName}"
+        echo "[INFO]: Disk space used: ${diskUsage}%"
+    else
+        echo -e "\r[ERROR] Failed to compressing." 
+    fi
 else 
     echo "There are too few files in the directory. Need $N files for compression."
 fi
