@@ -16,10 +16,10 @@ fi
 
 > "$logFile"
 
-testsCount=8
-countGeneratingFiles=(158 158 220 1 1 220 600 20)
-percentageForTests=(50 69 0 1 2 90 99 70)
-countForCompression=(2 0 0 0 300 1 100 5)
+testsCount=12
+countGeneratingFiles=(158 158 220 1 1 220 600 20 10 10 10 5)
+percentageForTests=(50 69 0 1 2 90 99 70 -1 200 70 70)
+countForCompression=(2 0 0 0 300 1 100 5 5 5 -1 5)
 
 rm -rf "${logDisk:?}/"*
 rm -rf "${backupDisk:?}/"*
@@ -38,17 +38,27 @@ for ((i=0; i<testsCount; i++)); do
     echo "" >> "$logFile"
 
     echo "Generating test files..." >> "$logFile"
-    for ((j=0; j<countGeneratingFiles[i]; j++)); do
-        filePath="${logDisk}/testFile_${j}.log"
-        touch "$filePath"
-        if [[ $i -eq 6 ]]; then
-            echo "small content $j" > "$filePath"
-        elif [[ $i -eq 7 ]]; then
-            yes "big file content $j" | head -n 2000000 > "$filePath"
-        else
-            yes "test $j" | head -n 500000 > "$filePath"
-        fi
-    done
+
+    if [[ $i -eq 11 ]]; then
+        echo "[TEST] Creating files with special characters..." >> "$logFile"
+        echo "test" > "$logDisk/normal.log"
+        echo "test" > "$logDisk/file with spaces.log"
+        echo "test" > "$logDisk/file'with'quotes.log"
+        echo "test" > "$logDisk/file-with-dash.log"
+        echo "test" > "$logDisk/file_with_underscore.log"
+    else
+        for ((j=0; j<countGeneratingFiles[i]; j++)); do
+            filePath="${logDisk}/testFile_${j}.log"
+            touch "$filePath"
+            if [[ $i -eq 6 ]]; then
+                echo "small content $j" > "$filePath"
+            elif [[ $i -eq 7 ]]; then
+                yes "big file content $j" | head -n 2000000 > "$filePath"
+            else
+                yes "test $j" | head -n 500000 > "$filePath"
+            fi
+        done
+    fi
 
     echo "Running checker..." >> "$logFile"
     checkerStart=$(date +%s)
@@ -62,7 +72,7 @@ for ((i=0; i<testsCount; i++)); do
     testFinish=$(date +%s)
     testTime=$((testFinish - testStart))
     checkerTime=$((checkerFinish - checkerStart))
-    
+
     echo "[TEST] Test #$((i+1)) finished in ${testTime}s"
 
     echo "" >> "$logFile"
@@ -80,3 +90,4 @@ done
 scriptDir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 echo "[TEST] Completed $testsCount/$testsCount tests."
 echo "[TEST] Detailed test log at ${scriptDir}/${logFile}."
+

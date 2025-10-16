@@ -56,11 +56,6 @@ fi
 
 archive="$backupDisk/archive-$(date +%Y%m%d%H%M%S).tar.gz"
 
-# echo "[INFO]: Archiving ${#files[@]} files:"
-# for f in "${files[@]}"; do
-#     echo "  → $(basename "$f")"
-# done
-
 if tar -czf "$archive" -C "$logDisk" "${files[@]##*/}"; then
     rm "${files[@]}"
     echo "[INFO]: Archived ${#files[@]} files to $(basename "$archive")"
