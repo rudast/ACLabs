@@ -2,54 +2,60 @@
 
 logDisk=$1
 backupDisk=$2
+logFile="${3:-tests.log}"
 
 if [[ ! -d "$logDisk" ]]; then
-    echo "[ERROR]: Set true path to the disk with /log as first parametr."
+    echo "[ERROR]: Set true path to the disk with /log as first parameter."
     exit 1
 fi
 
 if [[ ! -d "$backupDisk" ]]; then
-    echo "[ERROR]: Set true path to the disk with /backup as second parametr."
+    echo "[ERROR]: Set true path to the disk with /backup as second parameter."
+    exit 1
 fi
 
-testsCount=4
-countGeneratingFiles=('100' '300' '450' '600')
-percentageForTests=('10' '40' '70' '90')
-countForCompression=('70' '200' '420' '550')
-touch "log.txt"
-echo -n > "log.txt"
+> "$logFile"
+
+testsCount=8
+countGeneratingFiles=(158 158 220 1 1 220 600 20)
+percentageForTests=(50 69 0 1 2 90 99 70)
+countForCompression=(2 0 0 0 300 1 100 5)
 
 rm -rf "${logDisk:?}/"*
 rm -rf "${backupDisk:?}/"*
 
 for ((i=0; i<testsCount; i++)); do
-    echo "[TEST] Starting test #$((i+1)) ..."
+    echo "[TEST] Starting test #$((i+1)):"
     testStart=$(date +%s)
 
-    echo "===================================================" >> "log.txt"
-    echo "                 [ TEST CASE #$((i+1)) ] " >> "log.txt"
-    echo "===================================================" >> "log.txt"
-    echo "Count of generated files      - ${countGeneratingFiles[i]};" >> "log.txt"
-    echo "Percantage for compression    - ${percentageForTests[i]}%;" >> "log.txt"
-    echo "Count to compression files    - ${countForCompression[i]};" >> "log.txt"
-    echo "---------------------------------------------------" >> "log.txt"
-    echo "" >> "log.txt"
+    echo "===================================================" >> "$logFile"
+    echo "                 [ TEST CASE #$((i+1)) ] " >> "$logFile"
+    echo "===================================================" >> "$logFile"
+    echo "Count of generated files      - ${countGeneratingFiles[i]};" >> "$logFile"
+    echo "Percentage for compression    - ${percentageForTests[i]}%;" >> "$logFile"
+    echo "Count to preserve newest      - ${countForCompression[i]};" >> "$logFile"
+    echo "---------------------------------------------------" >> "$logFile"
+    echo "" >> "$logFile"
 
-    echo "Data are generated..." >> "log.txt"
-
+    echo "Generating test files..." >> "$logFile"
     for ((j=0; j<countGeneratingFiles[i]; j++)); do
-        touch "${logDisk}/testFile_${j}.txt"
-        yes "test" | head -n 200000 > "${logDisk}/testFile_${j}.txt"
+        filePath="${logDisk}/testFile_${j}.log"
+        touch "$filePath"
+        if [[ $i -eq 6 ]]; then
+            echo "small content $j" > "$filePath"
+        elif [[ $i -eq 7 ]]; then
+            yes "big file content $j" | head -n 2000000 > "$filePath"
+        else
+            yes "test $j" | head -n 500000 > "$filePath"
+        fi
     done
 
-    echo "Checker is working..." >> "log.txt"
-
+    echo "Running checker..." >> "$logFile"
     checkerStart=$(date +%s)
-    bash checker.sh $logDisk $backupDisk ${percentageForTests[i]} ${countForCompression[i]} >> "log.txt"
+    bash checker.sh "$logDisk" "$backupDisk" "${percentageForTests[i]}" "${countForCompression[i]}" >> "$logFile" 2>&1
     checkerFinish=$(date +%s)
 
-    echo "Data are deleted..." >> "log.txt"
-
+    echo "Cleaning up test directories..." >> "$logFile"
     rm -rf "${logDisk:?}/"*
     rm -rf "${backupDisk:?}/"*
 
@@ -59,19 +65,18 @@ for ((i=0; i<testsCount; i++)); do
     
     echo "[TEST] Test #$((i+1)) finished in ${testTime}s"
 
-    echo "" >> "log.txt"
-    echo "---------------------------------------------------" >> "log.txt"
-    echo "Checker runtime   - ${checkerTime} seconds" >> "log.txt"
-    echo "Test runtime      - ${testTime} seconds" >> "log.txt"
-    echo "===================================================" >> "log.txt"
-    echo "               [ TEST CASE #$((i+1)) - OK ] " >> "log.txt"
-    echo "===================================================" >> "log.txt"
-    echo "" >> "log.txt"
-    echo "" >> "log.txt"
+    echo "" >> "$logFile"
+    echo "---------------------------------------------------" >> "$logFile"
+    echo "Checker runtime   - ${checkerTime} seconds" >> "$logFile"
+    echo "Test runtime      - ${testTime} seconds" >> "$logFile"
+    echo "===================================================" >> "$logFile"
+    echo "               [ TEST CASE #$((i+1)) - OK ] " >> "$logFile"
+    echo "===================================================" >> "$logFile"
+    echo "" >> "$logFile"
+    echo "" >> "$logFile"
 
 done
 
-
 scriptDir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 echo "[TEST] Completed $testsCount/$testsCount tests."
-echo "[TEST] A detailed test log can be viewed at ${scriptDir}/log.txt."
+echo "[TEST] Detailed test log at ${scriptDir}/${logFile}."
