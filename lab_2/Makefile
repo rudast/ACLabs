@@ -1,4 +1,4 @@
-CXX = clang++
+CXX = g++
 CXXFLAGS = -std=c++17 -Wall -Wextra -Werror -O2
 LDFLAGS = -pthread
 
@@ -29,4 +29,13 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 clean:
 	rm -rf $(OBJDIR)
 
-.PHONY: all clean
+.PHONY: all clean test
+
+all: $(TARGET_SERVER) $(TARGET_CLIENT)
+
+test: all
+	@echo "=== Running tests ==="
+	@./tests/test_ping_pong.sh
+	@./tests/test_multi_ping.sh
+	@./tests/test_custom_and_ping.sh
+	@echo "=== All tests passed ==="
