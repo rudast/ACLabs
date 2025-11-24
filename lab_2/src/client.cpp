@@ -9,10 +9,8 @@
 #include <cerrno>
 #include <cstring>
 #include <iostream>
-#include <optional>
-#include <string>
 
-Client::Client(const std::string& host, int port) : host(host) {
+Client::Client(const std::string& host, int port) : sock(-1), host(host) {
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(port);
     server_addr.sin_addr.s_addr = inet_addr(host.c_str());
@@ -29,17 +27,27 @@ bool Client::connectToServer() {
         return false;
     }
 
-    int connect_result = connect(sock, (const struct sockaddr*)&server_addr, sizeof(server_addr));
+    int connect_result =
+        connect(sock, reinterpret_cast<const struct sockaddr*>(&server_addr),
+                sizeof(server_addr));
     if (connect_result < 0) {
         std::cerr << "Connection error: " << std::strerror(errno) << '\n';
         close(sock);
+        sock = -1;
         return false;
     }
+
+    std::cout << "Client connected to " << host << '\n';
     return true;
 }
 
 bool Client::sendMessage(const std::string& msg) {
-    int send_result = send(sock, msg.c_str(), msg.size(), 0);
+    if (sock < 0) {
+        std::cerr << "Send error: socket is not connected\n";
+        return false;
+    }
+
+    ssize_t send_result = send(sock, msg.c_str(), msg.size(), 0);
     if (send_result < 0) {
         std::cerr << "Send error: " << std::strerror(errno) << '\n';
         return false;
@@ -50,14 +58,21 @@ bool Client::sendMessage(const std::string& msg) {
 }
 
 std::optional<std::string> Client::receiveMessage() {
+    if (sock < 0) {
+        std::cerr << "Receive error: socket is not connected\n";
+        return {};
+    }
+
     char buff[1024];
-    int messageSize = recv(sock, buff, sizeof(buff), 0);
+    ssize_t messageSize = recv(sock, buff, sizeof(buff), 0);
 
     if (messageSize == 0) {
         std::cout << "Server disconnected\n";
         close(sock);
+        sock = -1;
         return {};
     }
+
     if (messageSize < 0) {
         switch (errno) {
             case ECONNRESET:
@@ -81,32 +96,18 @@ std::optional<std::string> Client::receiveMessage() {
                 break;
         }
         close(sock);
+        sock = -1;
         return {};
     }
 
-    if (messageSize >= 1023) messageSize = 1023;
-    buff[messageSize] = '\0';
-
-    return std::string(buff);
+    // recv гарантирует, что messageSize <= sizeof(buff)
+    return std::string(buff, static_cast<size_t>(messageSize));
 }
 
 void Client::disconnect() {
     if (sock >= 0) {
         close(sock);
         sock = -1;
-    }
-}
-
-bool Client::isConnected() {
-    char buffer;
-    int result = recv(sock, &buffer, 1, MSG_PEEK | MSG_DONTWAIT);
-
-    if (result > 0) {
-        return true;
-    } else if (result == 0) {
-        return false;
-    } else {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) return true;
-        return false;
+        std::cout << "Client disconnected\n";
     }
 }

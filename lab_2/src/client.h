@@ -2,25 +2,28 @@
 #define CLIENT_H
 
 #pragma once
+
 #include <netinet/in.h>
 
 #include <optional>
 #include <string>
 
 class Client {
-   public:
+public:
     Client(const std::string& host, int port);
 
     bool connectToServer();
     bool sendMessage(const std::string& msg);
     std::optional<std::string> receiveMessage();
     void disconnect();
-    bool isConnected();
 
-   private:
-    int sock;
+    // Простая проверка: есть ли вообще открытый сокет
+    bool isConnected() const { return sock >= 0; }
+
+private:
+    int sock{-1};
     std::string host;
     sockaddr_in server_addr{};
 };
 
-#endif
+#endif // CLIENT_H
