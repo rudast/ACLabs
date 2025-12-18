@@ -11,14 +11,12 @@ SERVER_PID=$!
 
 sleep 0.3
 
-# Отправим "hello", потом "ping", потом "q"
 CLIENT_OUTPUT=$(printf "hello\nping\nq\n" | "$CLIENT_BIN")
 
 echo "=== Client output ==="
 echo "$CLIENT_OUTPUT"
 echo "====================="
 
-# Проверяем, что хотя бы один pong есть
 PONG_COUNT=$(echo "$CLIENT_OUTPUT" | grep -c "Client received message by Server: pong" || true)
 
 if [ "$PONG_COUNT" -ge 1 ]; then

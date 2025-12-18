@@ -2,7 +2,7 @@
 #include <iostream>
 
 int main() {
-    Server s(8080, 10000);
+    Server s(8081, 10000);
     if (!s.start()) return 1;
 
     std::cout << "Press ENTER to stop server...\n";

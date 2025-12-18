@@ -11,14 +11,12 @@ SERVER_PID=$!
 
 sleep 0.3
 
-# Отправим три ping и потом q
 CLIENT_OUTPUT=$(printf "ping\nping\nping\nq\n" | "$CLIENT_BIN")
 
 echo "=== Client output ==="
 echo "$CLIENT_OUTPUT"
 echo "====================="
 
-# Считаем количество pong-ответов
 PONG_COUNT=$(echo "$CLIENT_OUTPUT" | grep -c "Client received message by Server: pong" || true)
 
 if [ "$PONG_COUNT" -eq 3 ]; then

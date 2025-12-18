@@ -1,3 +1,4 @@
 *.log
 *.o
 lab_2/build/*
+lab_3/build/*
