@@ -48,7 +48,7 @@ static bool recv_some(int fd, std::string& out) {
 int main(int argc, char** argv) {
     // ./stress_client [ip] [port] [clients] [msgs_per_client] [hold_ms]
     std::string ip = (argc > 1) ? argv[1] : "127.0.0.1";
-    int port = (argc > 2) ? std::stoi(argv[2]) : 8080;
+    int port = (argc > 2) ? std::stoi(argv[2]) : 8081;
     int clients = (argc > 3) ? std::stoi(argv[3]) : 50;
     int msgs = (argc > 4) ? std::stoi(argv[4]) : 20;
     int hold_ms = (argc > 5) ? std::stoi(argv[5]) : 1000;
