@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -15,7 +16,6 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
-#include <chrono>
 
 #include "utils.h"
 
@@ -44,7 +44,7 @@ std::atomic<size_t> result_counter{0};
 std::atomic<bool> producer_done{false};
 
 int main(int argc, char* argv[]) {
-    std::string host = "0.0.0.0"; // Слушаем все интерфейсы для Docker
+    std::string host = "0.0.0.0";  // Слушаем все интерфейсы для Docker
     int port = 5001;
 
     for (int i = 1; i < argc; ++i) {
@@ -155,7 +155,7 @@ void handle_producer(int client_socket) {
             if (type == MSG_END) {
                 std::cout << "[Broker] Producer finished sending tasks\n";
                 producer_done = true;
-                cv_queue.notify_all(); // Уведомляем потребителей, что задач больше не будет
+                cv_queue.notify_all();  // Уведомляем потребителей, что задач больше не будет
                 break;
             }
 
@@ -203,7 +203,7 @@ void handle_consumer(int client_socket) {
                 }
 
                 image = std::move(task_queue.front());
-                task_queue.pop(); // Извлекаем задачу сразу, чтобы другие её не взяли
+                task_queue.pop();  // Извлекаем задачу сразу, чтобы другие её не взяли
             }
 
             // Отправляем задачу
@@ -223,7 +223,8 @@ void handle_consumer(int client_socket) {
                 std::string path = "./output/result_" + std::to_string(++result_counter) + ".ppm";
                 write_file(path, result);
                 completed_tasks++;
-                std::cout << "[Broker] Result saved [" << completed_tasks << "/" << total_tasks << "]\n";
+                std::cout << "[Broker] Result saved [" << completed_tasks << "/" << total_tasks
+                          << "]\n";
             }
         }
     } catch (const std::exception& e) {

@@ -1,21 +1,14 @@
-# Этап сборки
 FROM ubuntu:22.04 AS builder
-RUN apt-get update && apt-get install -y clang make
+RUN apt-get update && apt-get install -y g++ make
 
 WORKDIR /app
-# Копирование исходного кода
 COPY Makefile .
 COPY src/ ./src/
 
-# Компиляция нужного таргета (broker, producer или consumer)
 RUN make build/consumer
 
-# Этап выполнения
 FROM ubuntu:22.04
 WORKDIR /app
-
-# Копирование только готового бинарного файла из этапа сборки
 COPY --from=builder /app/build/consumer .
 
-# Пример запуска с передачей аргументов
 ENTRYPOINT ["./consumer"]

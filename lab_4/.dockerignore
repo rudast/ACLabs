@@ -1,0 +1,7 @@
+.git
+*.md
+logs/
+output/
+images/
+*.ppm
+build/

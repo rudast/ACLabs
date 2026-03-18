@@ -1,9 +1,10 @@
 #include <arpa/inet.h>
 #include <dirent.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <netdb.h>
+
 #include <cstring>
 #include <iostream>
 #include <vector>
@@ -21,7 +22,7 @@ std::vector<std::string> get_ppm_files(const std::string& dir);
 
 int main(int argc, char* argv[]) {
     std::string broker_host = "127.0.0.1";
-    int broker_port = 5001; // Соответствует docker-compose.yaml
+    int broker_port = 5001;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -32,7 +33,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    struct hostent *server = gethostbyname(broker_host.c_str());
+    struct hostent* server = gethostbyname(broker_host.c_str());
     if (server == nullptr) {
         std::cerr << "[Producer] Error: No such host " << broker_host << "\n";
         return 1;
@@ -45,7 +46,8 @@ int main(int argc, char* argv[]) {
 
     int client = socket(AF_INET, SOCK_STREAM, 0);
     if (connect(client, (sockaddr*)&addr, sizeof(addr)) < 0) {
-        std::cerr << "[Producer] Failed to connect to broker at " << broker_host << ":" << broker_port << "\n";
+        std::cerr << "[Producer] Failed to connect to broker at " << broker_host << ":"
+                  << broker_port << "\n";
         return 1;
     }
     std::cout << "[Producer] Connected to broker\n";
@@ -82,13 +84,13 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 
-// Реализации функций идентичны consumer.cpp или исходным файлам
 void send_data(int socket_, const void* data, size_t size) {
     const uint8_t* ptr = static_cast<const uint8_t*>(data);
     while (size > 0) {
         ssize_t s = send(socket_, ptr, size, MSG_NOSIGNAL);
         if (s <= 0) throw std::runtime_error("Send failed");
-        ptr += s; size -= s;
+        ptr += s;
+        size -= s;
     }
 }
 
@@ -97,7 +99,8 @@ void recv_data(int socket_, void* data, size_t size) {
     while (size > 0) {
         ssize_t r = recv(socket_, ptr, size, 0);
         if (r <= 0) throw std::runtime_error("Recv failed");
-        ptr += r; size -= r;
+        ptr += r;
+        size -= r;
     }
 }
 

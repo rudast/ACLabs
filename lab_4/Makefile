@@ -1,4 +1,4 @@
-CXX = clang++
+CXX = g++
 CXXFLAGS = -std=c++17 -Wall -Wextra -Werror -O2
 LDFLAGS = -pthread
 
