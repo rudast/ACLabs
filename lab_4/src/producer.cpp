@@ -3,9 +3,10 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
-
-#include <cstddef>
-#include <cstdint>
+#include <netdb.h>
+#include <cstring>
+#include <iostream>
+#include <vector>
 
 #include "utils.h"
 
@@ -20,7 +21,7 @@ std::vector<std::string> get_ppm_files(const std::string& dir);
 
 int main(int argc, char* argv[]) {
     std::string broker_host = "127.0.0.1";
-    int broker_port = 5000;
+    int broker_port = 5001; // Соответствует docker-compose.yaml
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -31,69 +32,72 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    struct hostent *server = gethostbyname(broker_host.c_str());
+    if (server == nullptr) {
+        std::cerr << "[Producer] Error: No such host " << broker_host << "\n";
+        return 1;
+    }
+
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(broker_port);
-    inet_pton(AF_INET, broker_host.c_str(), &addr.sin_addr);
+    std::memcpy(&addr.sin_addr.s_addr, server->h_addr, server->h_length);
 
     int client = socket(AF_INET, SOCK_STREAM, 0);
     if (connect(client, (sockaddr*)&addr, sizeof(addr)) < 0) {
-        std::cerr << "Failed to connect to broker\n";
+        std::cerr << "[Producer] Failed to connect to broker at " << broker_host << ":" << broker_port << "\n";
         return 1;
     }
-    std::cout << "Connected to broker\n";
+    std::cout << "[Producer] Connected to broker\n";
 
     uint8_t msg = MSG_PRODUCER;
     send_data(client, &msg, 1);
 
     std::vector<std::string> files = get_ppm_files("./images");
-    std::cout << "Found " << files.size() << " files\n";
+    std::cout << "[Producer] Found " << files.size() << " files\n";
 
     for (const auto& path : files) {
-        std::cout << "Sending: " << path << "\n";
-        Image img = read_file(path);
-
-        uint8_t task_msg = MSG_TASK;
-        send_data(client, &task_msg, 1);
-        send_image(client, img);
+        try {
+            Image img = read_file(path);
+            uint8_t task_msg = MSG_TASK;
+            send_data(client, &task_msg, 1);
+            send_image(client, img);
+            std::cout << "[Producer] Sent: " << path << "\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[Producer] Error reading " << path << ": " << e.what() << "\n";
+        }
     }
 
     uint8_t end_msg = MSG_END;
     send_data(client, &end_msg, 1);
-    std::cout << "All tasks sent, waiting for results...\n";
+    std::cout << "[Producer] Waiting for completion...\n";
 
     uint8_t done_msg;
     recv_data(client, &done_msg, 1);
-
     if (done_msg == MSG_END) {
-        std::cout << "All tasks completed!\n";
+        std::cout << "[Producer] All tasks completed!\n";
     }
+
     close(client);
     return 0;
 }
 
+// Реализации функций идентичны consumer.cpp или исходным файлам
 void send_data(int socket_, const void* data, size_t size) {
     const uint8_t* ptr = static_cast<const uint8_t*>(data);
     while (size > 0) {
-        ssize_t send_ = send(socket_, ptr, size, MSG_NOSIGNAL);
-        if (send_ <= 0) {
-            throw std::runtime_error("[Producer] Failed to send data");
-        }
-
-        ptr += send_;
-        size -= send_;
+        ssize_t s = send(socket_, ptr, size, MSG_NOSIGNAL);
+        if (s <= 0) throw std::runtime_error("Send failed");
+        ptr += s; size -= s;
     }
 }
 
 void recv_data(int socket_, void* data, size_t size) {
     uint8_t* ptr = static_cast<uint8_t*>(data);
     while (size > 0) {
-        ssize_t recv_ = recv(socket_, ptr, size, 0);
-        if (recv_ <= 0) {
-            throw std::runtime_error("[Producer] Failed to recv data");
-        }
-        ptr += recv_;
-        size -= recv_;
+        ssize_t r = recv(socket_, ptr, size, 0);
+        if (r <= 0) throw std::runtime_error("Recv failed");
+        ptr += r; size -= r;
     }
 }
 
@@ -108,10 +112,7 @@ void send_image(int socket_, const Image& image) {
 std::vector<std::string> get_ppm_files(const std::string& dir) {
     std::vector<std::string> files;
     DIR* d = opendir(dir.c_str());
-    if (!d) {
-        throw std::runtime_error("Cannot open directory: " + dir);
-    }
-
+    if (!d) return files;
     struct dirent* entry;
     while ((entry = readdir(d)) != nullptr) {
         std::string name = entry->d_name;

@@ -2,9 +2,11 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
-
+#include <netdb.h>
+#include <cstring>
 #include <cstddef>
 #include <cstdint>
+#include <iostream>
 
 #include "utils.h"
 
@@ -21,7 +23,7 @@ Image recv_image(int socket_);
 
 int main(int argc, char* argv[]) {
     std::string broker_host = "127.0.0.1";
-    int broker_port = 5000;
+    int broker_port = 5001; // Соответствует docker-compose.yaml
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -32,14 +34,20 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    struct hostent *server = gethostbyname(broker_host.c_str());
+    if (server == nullptr) {
+        std::cerr << "[Consumer] Error: No such host " << broker_host << "\n";
+        return 1;
+    }
+
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(broker_port);
-    inet_pton(AF_INET, broker_host.c_str(), &addr.sin_addr);
+    std::memcpy(&addr.sin_addr.s_addr, server->h_addr, server->h_length);
 
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (connect(sock, (sockaddr*)&addr, sizeof(addr)) < 0) {
-        std::cerr << "Failed to connect to broker\n";
+        std::cerr << "[Consumer] Failed to connect to broker at " << broker_host << ":" << broker_port << "\n";
         return 1;
     }
     std::cout << "[Consumer] Connected to broker\n";
@@ -58,7 +66,6 @@ int main(int argc, char* argv[]) {
 
         if (type == MSG_TASK) {
             Image img = recv_image(sock);
-
             uint8_t ack = MSG_ACK;
             send_data(sock, &ack, 1);
 
@@ -74,28 +81,22 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 
+// Реализации send_data, recv_data, send_image, recv_image остаются без изменений
 void send_data(int socket_, const void* data, size_t size) {
     const uint8_t* ptr = static_cast<const uint8_t*>(data);
     while (size > 0) {
-        ssize_t send_ = send(socket_, ptr, size, MSG_NOSIGNAL);
-        if (send_ <= 0) {
-            throw std::runtime_error("[Consumer] Failed to send data");
-        }
-
-        ptr += send_;
-        size -= send_;
+        ssize_t s = send(socket_, ptr, size, MSG_NOSIGNAL);
+        if (s <= 0) throw std::runtime_error("Send failed");
+        ptr += s; size -= s;
     }
 }
 
 void recv_data(int socket_, void* data, size_t size) {
     uint8_t* ptr = static_cast<uint8_t*>(data);
     while (size > 0) {
-        ssize_t recv_ = recv(socket_, ptr, size, 0);
-        if (recv_ <= 0) {
-            throw std::runtime_error("[Consumer] Failed to recv data");
-        }
-        ptr += recv_;
-        size -= recv_;
+        ssize_t r = recv(socket_, ptr, size, 0);
+        if (r <= 0) throw std::runtime_error("Recv failed");
+        ptr += r; size -= r;
     }
 }
 
@@ -115,6 +116,5 @@ Image recv_image(int socket_) {
     recv_data(socket_, &size, sizeof(size));
     image.bytes.resize(size);
     recv_data(socket_, image.bytes.data(), size);
-
     return image;
 }

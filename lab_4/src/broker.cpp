@@ -15,6 +15,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <chrono>
 
 #include "utils.h"
 
@@ -22,7 +23,6 @@ constexpr uint8_t MSG_PRODUCER = 1;
 constexpr uint8_t MSG_CONSUMER = 2;
 constexpr uint8_t MSG_TASK = 3;
 constexpr uint8_t MSG_RESULT = 4;
-// constexpr uint8_t MSG_NO_TASK = 5;
 constexpr uint8_t MSG_END = 6;
 constexpr uint8_t MSG_ACK = 7;
 
@@ -34,9 +34,18 @@ void handle_producer(int client_sock);
 void handle_consumer(int client_sock);
 void handle_client(int client_sock);
 
+std::queue<Image> task_queue;
+std::mutex mutex_queue;
+std::condition_variable cv_queue;
+
+std::atomic<size_t> total_tasks{0};
+std::atomic<size_t> completed_tasks{0};
+std::atomic<size_t> result_counter{0};
+std::atomic<bool> producer_done{false};
+
 int main(int argc, char* argv[]) {
-    std::string host = "127.0.0.1";
-    int port = 5000;
+    std::string host = "0.0.0.0"; // Слушаем все интерфейсы для Docker
+    int port = 5001;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -46,7 +55,7 @@ int main(int argc, char* argv[]) {
             port = std::stoi(argv[++i]);
         } else if (arg == "--help") {
             std::cout << "Usage: " << argv[0] << " [--host IP] [--port PORT]\n";
-            std::cout << "  --host, -h  IP address to bind (default: 127.0.0.1)\n";
+            std::cout << "  --host, -h  IP address to bind (default: 0.0.0.0)\n";
             std::cout << "  --port, -p  Port to listen (default: 5000)\n";
             return 0;
         }
@@ -92,18 +101,6 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 
-std::queue<Image> task_queue;
-std::mutex mutex_queue;
-std::condition_variable cv_queue;
-
-size_t total_tasks = 0;
-size_t completed_tasks = 0;
-std::mutex mutex_stats;
-std::condition_variable cv_stats;
-
-std::atomic<bool> producer_done{false};
-std::atomic<int> producer_socket{-1};
-
 void send_data(int socket_, const void* data, size_t size) {
     const uint8_t* ptr = static_cast<const uint8_t*>(data);
     while (size > 0) {
@@ -111,7 +108,6 @@ void send_data(int socket_, const void* data, size_t size) {
         if (send_ <= 0) {
             throw std::runtime_error("[Broker] Failed to send data");
         }
-
         ptr += send_;
         size -= send_;
     }
@@ -145,13 +141,11 @@ Image recv_image(int socket_) {
     recv_data(socket_, &size, sizeof(size));
     image.bytes.resize(size);
     recv_data(socket_, image.bytes.data(), size);
-
     return image;
 }
 
 void handle_producer(int client_socket) {
     std::cout << "[Broker] Producer connected\n";
-    producer_socket.store(client_socket);
 
     try {
         while (true) {
@@ -160,6 +154,8 @@ void handle_producer(int client_socket) {
 
             if (type == MSG_END) {
                 std::cout << "[Broker] Producer finished sending tasks\n";
+                producer_done = true;
+                cv_queue.notify_all(); // Уведомляем потребителей, что задач больше не будет
                 break;
             }
 
@@ -167,47 +163,27 @@ void handle_producer(int client_socket) {
                 Image image = recv_image(client_socket);
                 {
                     std::lock_guard<std::mutex> lock(mutex_queue);
-                    task_queue.push(image);
+                    task_queue.push(std::move(image));
                     total_tasks++;
                 }
                 cv_queue.notify_one();
-                std::cout << "[Broker] Task received (total: " << total_tasks << ")\n";
             }
         }
-    } catch (std::exception& e) {
-        std::cerr << "[Broker] Producer error: " << e.what() << "\n";
-        close(client_socket);
-        producer_socket.store(-1);
-        producer_done.store(true);
-        cv_queue.notify_all();
-        return;
-    }
 
-    std::cout << "[Broker] Waiting for " << total_tasks << " tasks to complete...\n";
-    while (true) {
-        {
-            std::lock_guard<std::mutex> lock(mutex_stats);
-            if (completed_tasks >= total_tasks) {
-                break;
-            }
+        // Ждем выполнения всех задач перед отправкой подтверждения продюсеру
+        while (completed_tasks < total_tasks) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
 
-    std::cout << "[Broker] All tasks completed, sending confirmation to Producer\n";
-
-    try {
         uint8_t done_msg = MSG_END;
         send_data(client_socket, &done_msg, 1);
     } catch (const std::exception& e) {
-        std::cerr << "[Broker] Failed to send confirmation: " << e.what() << "\n";
+        std::cerr << "[Broker] Producer error: " << e.what() << "\n";
+        producer_done = true;
+        cv_queue.notify_all();
     }
 
     close(client_socket);
-    producer_socket.store(-1);
-    producer_done.store(true);
-    cv_queue.notify_all();
-
     std::cout << "[Broker] Producer disconnected\n";
 }
 
@@ -217,64 +193,37 @@ void handle_consumer(int client_socket) {
     try {
         while (true) {
             Image image;
-
             {
                 std::unique_lock<std::mutex> lock(mutex_queue);
-                cv_queue.wait(lock, [] { return !task_queue.empty() || producer_done; });
+                cv_queue.wait(lock, [] { return !task_queue.empty() || producer_done.load(); });
 
                 if (task_queue.empty() && producer_done) {
                     send_data(client_socket, &MSG_END, 1);
                     break;
                 }
 
-                image = task_queue.front();
+                image = std::move(task_queue.front());
+                task_queue.pop(); // Извлекаем задачу сразу, чтобы другие её не взяли
             }
 
-            try {
-                send_data(client_socket, &MSG_TASK, 1);
-                send_image(client_socket, image);
+            // Отправляем задачу
+            send_data(client_socket, &MSG_TASK, 1);
+            send_image(client_socket, image);
 
-                uint8_t ack;
-                recv_data(client_socket, &ack, 1);
-                if (ack != MSG_ACK) {
-                    throw std::runtime_error("Expected ACK, got: " + std::to_string(ack));
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "[Broker] Consumer disconnected (task returned to queue): " << e.what()
-                          << "\n";
-                close(client_socket);
-                return;
-            }
+            // Ждем ACK
+            uint8_t ack;
+            recv_data(client_socket, &ack, 1);
+            if (ack != MSG_ACK) throw std::runtime_error("Expected ACK");
 
-            {
-                std::lock_guard<std::mutex> lock(mutex_queue);
-                task_queue.pop();
-            }
-
-            try {
-                uint8_t type;
-                recv_data(client_socket, &type, 1);
-
-                if (type == MSG_RESULT) {
-                    Image result = recv_image(client_socket);
-                    static size_t counter = 0;
-                    std::string path = "./output/result_" + std::to_string(++counter) + ".ppm";
-                    write_file(path, result);
-
-                    {
-                        std::lock_guard<std::mutex> lock(mutex_stats);
-                        ++completed_tasks;
-                        std::cout << "[Broker] Result saved [" << completed_tasks << '/'
-                                  << total_tasks << "]\n";
-                    }
-                } else if (type == MSG_END) {
-                    break;
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "[Broker] Consumer disconnected after ACK (result lost): " << e.what()
-                          << "\n";
-                close(client_socket);
-                return;
+            // Ждем результат
+            uint8_t res_type;
+            recv_data(client_socket, &res_type, 1);
+            if (res_type == MSG_RESULT) {
+                Image result = recv_image(client_socket);
+                std::string path = "./output/result_" + std::to_string(++result_counter) + ".ppm";
+                write_file(path, result);
+                completed_tasks++;
+                std::cout << "[Broker] Result saved [" << completed_tasks << "/" << total_tasks << "]\n";
             }
         }
     } catch (const std::exception& e) {
@@ -294,11 +243,9 @@ void handle_client(int client_socket) {
         } else if (type == MSG_CONSUMER) {
             handle_consumer(client_socket);
         } else {
-            std::cerr << "[Broker] Unknown client type: " << (int)type << "\n";
+            close(client_socket);
         }
-
-    } catch (std::exception& e) {
-        std::cerr << "[Broker] Client error: " << e.what() << "\n";
+    } catch (const std::exception& e) {
         close(client_socket);
     }
 }

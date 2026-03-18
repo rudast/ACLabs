@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  broker:
+    build:
+      context: .
+      dockerfile: Dockerfile.broker
+    command: ["--host", "0.0.0.0", "--port", "5001"]
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./output:/app/output
+
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile.consumer
+    command: ["--host", "broker", "--port", "5001"]
+    restart: on-failure
+    depends_on:
+      - broker
+
+  producer:
+    build:
+      context: .
+      dockerfile: Dockerfile.producer
+    command: ["--host", "broker", "--port", "5001"]
+    volumes:
+      - ./images:/app/images # Продюсер читает из ./images
+    restart: on-failure
+    depends_on:
+      - broker
