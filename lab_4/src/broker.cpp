@@ -44,7 +44,7 @@ std::atomic<size_t> result_counter{0};
 std::atomic<bool> producer_done{false};
 
 int main(int argc, char* argv[]) {
-    std::string host = "0.0.0.0";  // Слушаем все интерфейсы для Docker
+    std::string host = "0.0.0.0"; 
     int port = 5001;
 
     for (int i = 1; i < argc; ++i) {
@@ -155,7 +155,7 @@ void handle_producer(int client_socket) {
             if (type == MSG_END) {
                 std::cout << "[Broker] Producer finished sending tasks\n";
                 producer_done = true;
-                cv_queue.notify_all();  // Уведомляем потребителей, что задач больше не будет
+                cv_queue.notify_all();
                 break;
             }
 
@@ -170,7 +170,6 @@ void handle_producer(int client_socket) {
             }
         }
 
-        // Ждем выполнения всех задач перед отправкой подтверждения продюсеру
         while (completed_tasks < total_tasks) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
@@ -203,19 +202,16 @@ void handle_consumer(int client_socket) {
                 }
 
                 image = std::move(task_queue.front());
-                task_queue.pop();  // Извлекаем задачу сразу, чтобы другие её не взяли
+                task_queue.pop();
             }
 
-            // Отправляем задачу
             send_data(client_socket, &MSG_TASK, 1);
             send_image(client_socket, image);
 
-            // Ждем ACK
             uint8_t ack;
             recv_data(client_socket, &ack, 1);
             if (ack != MSG_ACK) throw std::runtime_error("Expected ACK");
 
-            // Ждем результат
             uint8_t res_type;
             recv_data(client_socket, &res_type, 1);
             if (res_type == MSG_RESULT) {
@@ -223,8 +219,7 @@ void handle_consumer(int client_socket) {
                 std::string path = "./output/result_" + std::to_string(++result_counter) + ".ppm";
                 write_file(path, result);
                 completed_tasks++;
-                std::cout << "[Broker] Result saved [" << completed_tasks << "/" << total_tasks
-                          << "]\n";
+                std::cout << "[Broker] Result saved [" << completed_tasks << "/" << total_tasks << "]\n";
             }
         }
     } catch (const std::exception& e) {

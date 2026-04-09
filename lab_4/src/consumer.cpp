@@ -24,7 +24,7 @@ Image recv_image(int socket_);
 
 int main(int argc, char* argv[]) {
     std::string broker_host = "127.0.0.1";
-    int broker_port = 5001;  // Соответствует docker-compose.yaml
+    int broker_port = 5001;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
